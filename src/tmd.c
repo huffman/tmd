@@ -1,4 +1,3 @@
-/* gcc -o part2 `pkg-config --cflags --libs xi` part2.c */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -59,11 +58,11 @@ void listen(Display *dpy, int xi_opcode)
     XIEventMask evmask_h;
     AttachInfoPtr ai;
 
-    Cursor m_cur;
-    m_cur = XCreateFontCursor(dpy, 88);
-    if (m_cur == BadAlloc || m_cur == BadValue) {
-        printf("Unable to create cursor\n");
-    }
+    //Cursor m_cur;
+    //m_cur = XCreateFontCursor(dpy, 88);
+    //if (m_cur == BadAlloc || m_cur == BadValue) {
+        //printf("Unable to create cursor\n");
+    //}
 
     evmask_h.mask = hmask;
     evmask_h.mask_len = sizeof(hmask);
@@ -82,7 +81,6 @@ void listen(Display *dpy, int xi_opcode)
         if (ev.evtype == XI_HierarchyChanged) {
             int i;
             XIHierarchyEvent *event = (XIHierarchyEvent*)&ev;
-            printf("Hierarchy Event.\n");
 
             /* Look for slave or masters added */
             if (event->flags & XISlaveAdded) {
@@ -96,9 +94,12 @@ void listen(Display *dpy, int xi_opcode)
                          * actually create a new master device for this device
                          * we would end up with a recurring creation of
                          * master devices and slave devices. */
-                        if (strstr(s_name, "Xtst")) continue;
+                        if (strstr(s_name, "Xtst") ||
+                            !strstr(s_name, "subdev"))
+                            continue;
+                        
 
-                        asprintf(&m_name, MD_PREFIX"%s", s_name);
+                        asprintf(&m_name, MD_PREFIX "%s", s_name);
                         create_master(dpy, m_name);
                         free(m_name);
 
@@ -106,11 +107,13 @@ void listen(Display *dpy, int xi_opcode)
                         ai->next = ais.next;
                         ais.next = ai;
 
-                        asprintf(&ai->m_name, MD_PREFIX"%s pointer", s_name);
+                        asprintf(&ai->m_name, MD_PREFIX "%s pointer", s_name);
                         ai->slaveid = event->info[i].deviceid;
                     }
                 }
-            } else if (event->flags & XIMasterAdded) {
+            }
+            
+            if (event->flags & XIMasterAdded) {
                 printf("Master added\n");
 
                 for (i=0; i < event->num_info; i++) {
@@ -124,8 +127,8 @@ void listen(Display *dpy, int xi_opcode)
                                 printf("  New Master: %d %s\n", event->info[i].deviceid,
                                         m_name);
                                 change_attachment(dpy, ai->slaveid, event->info[i].deviceid);
-                                XIDefineCursor(dpy, event->info[i].deviceid,
-                                               DefaultRootWindow(dpy), m_cur);
+                                //XIDefineCursor(dpy, event->info[i].deviceid,
+                                               //DefaultRootWindow(dpy), m_cur);
                             }
                             ai = ai->next;
                         }
