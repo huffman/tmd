@@ -6,6 +6,7 @@
 #include <X11/extensions/XInput2.h>
 
 #define MD_PREFIX "TUIO "
+#define PDEBUG(X) if(debug) printf(X);
 
 typedef struct _attach_info {
     struct _attach_info *next;
@@ -14,6 +15,8 @@ typedef struct _attach_info {
 } AttachInfo, *AttachInfoPtr;
 
 static AttachInfo ais;
+static int debug;
+static Display *display;
 
 /**
  * Creates a new master device.
@@ -54,10 +57,11 @@ void listen(Display *dpy, int xi_opcode)
     int num_devices;
     unsigned char hmask[2] = { 0, 0 };
     char *m_name, *s_name;
-    XIEvent ev;
+    XEvent ev;
     XIEventMask evmask_h;
     AttachInfoPtr ai;
 
+    display = dpy;
     //Cursor m_cur;
     //m_cur = XCreateFontCursor(dpy, 88);
     //if (m_cur == BadAlloc || m_cur == BadValue) {
@@ -73,20 +77,29 @@ void listen(Display *dpy, int xi_opcode)
     XISelectEvents(dpy, DefaultRootWindow(dpy), &evmask_h, 1);
 
     while (1) {
-        XNextEvent(dpy, (XIEvent *)&ev);
-        if (ev.type != GenericEvent ||
-                ev.extension != xi_opcode)
+        XGenericEventCookie *cookie;
+        cookie = &ev.xcookie;
+        XNextEvent(dpy, &ev);
+
+        if (!XGetEventData(dpy, cookie))
             continue;
 
-        if (ev.evtype == XI_HierarchyChanged) {
+        dpy = display;
+        PDEBUG("Event Received\n");
+
+        if (cookie->type != GenericEvent ||
+                cookie->extension != xi_opcode)
+            continue;
+
+        if (cookie->evtype == XI_HierarchyChanged) {
             int i;
-            XIHierarchyEvent *event = (XIHierarchyEvent*)&ev;
+            XIHierarchyEvent *event = cookie->data;
 
             /* Look for slave or masters added */
             if (event->flags & XISlaveAdded) {
-                printf("Slave added\n");
+                PDEBUG("Slave added\n");
                 for (i=0; i < event->num_info; i++) {
-                    if(event->info[i].flags & XISlaveAdded) {
+                    if (event->info[i].flags & XISlaveAdded) {
                         s_name = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices)->name;
 
                         /* This is a hack.  Xtst slave devices are created and
@@ -95,8 +108,10 @@ void listen(Display *dpy, int xi_opcode)
                          * we would end up with a recurring creation of
                          * master devices and slave devices. */
                         if (strstr(s_name, "Xtst") ||
-                            !strstr(s_name, "subdev"))
+                                !strstr(s_name, "subdev")) {
+                            PDEBUG("Device not a tuio subdevice\n");
                             continue;
+                        }
                         
 
                         asprintf(&m_name, MD_PREFIX "%s", s_name);
@@ -136,6 +151,7 @@ void listen(Display *dpy, int xi_opcode)
                 }
             }
         }
+        XFreeEventData(dpy, cookie);
     }
 }
 
@@ -146,7 +162,10 @@ int main (int argc, char **argv)
     int major, minor;
     int ret;
 
+    debug = 1;
     ais.next = NULL;
+
+    PDEBUG("Debug on\n");
 
     /* Open X display */
     dpy = XOpenDisplay(NULL);
