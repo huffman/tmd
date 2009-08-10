@@ -6,7 +6,7 @@
 #include <X11/extensions/XInput2.h>
 
 #define MD_PREFIX "TUIO "
-#define PDEBUG(X) if(debug) printf(X);
+#define PDEBUG(msg, ...) if(debug) printf("TMD: "msg,##__VA_ARGS__);
 
 typedef struct _attach_info {
     struct _attach_info *next;
@@ -15,8 +15,7 @@ typedef struct _attach_info {
 } AttachInfo, *AttachInfoPtr;
 
 static AttachInfo ais;
-static int debug;
-static Display *display;
+static int debug = 0;
 
 /**
  * Creates a new master device.
@@ -61,7 +60,6 @@ void listen(Display *dpy, int xi_opcode)
     XIEventMask evmask_h;
     AttachInfoPtr ai;
 
-    display = dpy;
     //Cursor m_cur;
     //m_cur = XCreateFontCursor(dpy, 88);
     //if (m_cur == BadAlloc || m_cur == BadValue) {
@@ -84,7 +82,6 @@ void listen(Display *dpy, int xi_opcode)
         if (!XGetEventData(dpy, cookie))
             continue;
 
-        dpy = display;
         PDEBUG("Event Received\n");
 
         if (cookie->type != GenericEvent ||
@@ -129,7 +126,7 @@ void listen(Display *dpy, int xi_opcode)
             }
             
             if (event->flags & XIMasterAdded) {
-                printf("Master added\n");
+                PDEBUG("Master added\n");
 
                 for (i=0; i < event->num_info; i++) {
                     if(event->info[i].flags & XIMasterAdded) {
@@ -139,7 +136,7 @@ void listen(Display *dpy, int xi_opcode)
                         ai = ais.next;
                         while (ai != NULL) {
                             if (strcmp(ai->m_name, m_name) == 0) {
-                                printf("  New Master: %d %s\n", event->info[i].deviceid,
+                                PDEBUG("  New Master: %d %s\n", event->info[i].deviceid,
                                         m_name);
                                 change_attachment(dpy, ai->slaveid, event->info[i].deviceid);
                                 //XIDefineCursor(dpy, event->info[i].deviceid,
@@ -155,6 +152,27 @@ void listen(Display *dpy, int xi_opcode)
     }
 }
 
+void printHelp(char* bin_name) {
+    printf("Usage: %s [OPTION...]\n", bin_name);
+    printf("\n");
+    printf("  -d\tenables debugging output\n");
+    printf("  -h\tprints this help message\n");
+}
+
+void processArgs(int argc, char **argv) {
+    int i;
+
+    for (i=1; i<argc; i++) {
+        if (strcmp(argv[i], "-d") == 0) {
+            debug = 1;
+            PDEBUG("Debug on\n");
+        } else if (strcmp(argv[i], "-h") == 0) {
+            printHelp(argv[0]);
+            exit(0);
+        }
+    }
+}
+
 int main (int argc, char **argv)
 {
     Display *dpy;
@@ -162,10 +180,12 @@ int main (int argc, char **argv)
     int major, minor;
     int ret;
 
-    debug = 1;
     ais.next = NULL;
 
-    PDEBUG("Debug on\n");
+    processArgs(argc, argv);
+
+    debug = 1;
+
 
     /* Open X display */
     dpy = XOpenDisplay(NULL);
