@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
@@ -10,6 +11,7 @@
 
 typedef struct _attach_info {
     struct _attach_info *next;
+
     int slaveid;
     int masterid;
     char *m_name;
@@ -17,6 +19,7 @@ typedef struct _attach_info {
 
 static AttachInfo ais;
 static int debug = 0;
+static int foreground = 1;
 
 /**
  * Removes a master device.
@@ -68,6 +71,7 @@ void listen(Display *dpy, int xi_opcode) {
     unsigned char hmask[2] = { 0, 0 };
     char *m_name, *s_name;
     XEvent ev;
+    XIDeviceInfo *info;
     XIEventMask evmask_h;
     AttachInfoPtr ai;
 
@@ -81,12 +85,13 @@ void listen(Display *dpy, int xi_opcode) {
     evmask_h.mask_len = sizeof(hmask);
     evmask_h.deviceid = XIAllDevices;
     XISetMask(hmask, XI_HierarchyChanged);
-    //XFlush(dpy);
+    XFlush(dpy);
 
     XISelectEvents(dpy, DefaultRootWindow(dpy), &evmask_h, 1);
 
     PDEBUG("Listening for events...\n");
 
+    /* Start listening for events... */
     while (1) {
         XGenericEventCookie *cookie;
         cookie = &ev.xcookie;
@@ -105,22 +110,35 @@ void listen(Display *dpy, int xi_opcode) {
             int i;
             XIHierarchyEvent *event = cookie->data;
 
-            /* Look for slave or masters added */
             if (event->flags & XISlaveAdded) {
-                PDEBUG("Slave added\n");
+                PDEBUG("  Slave added\n");
+
                 for (i=0; i < event->num_info; i++) {
                     if (event->info[i].flags & XISlaveAdded) {
-                        s_name = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices)->name;
+                        info = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices);
+                        if (num_devices != 1) {
+                            PDEBUG("    Couldn't find slave device (XIQueryDevice)\n");
+                            XIFreeDeviceInfo(info);
+                            continue;
+                        }
+                        s_name = info->name;
+
+                        PDEBUG("    Found: %s\n", s_name);
 
                         /* This is a hack.  Xtst slave devices are created and
                          * attached to each new master device within X.  If we 
                          * were to actually create a new master device for this
                          * device we would end up with a recurring creation of
-                         * master devices and slave devices. */
+                         * master devices and slave devices. Also, tuio subdevices
+                         * will have the word "subdev" in them. */
                         if (strstr(s_name, "Xtst") ||
                                 !strstr(s_name, "subdev")) {
-                            PDEBUG("Device not a tuio subdevice\n");
+                            PDEBUG("      Device is NOT a tuio subdevice\n");
+                            XIFreeDeviceInfo(info);
                             continue;
+                        } else {
+                            PDEBUG("      Device is a tuio subdevice, "
+                                    "creating Master Device\n");
                         }
 
                         asprintf(&m_name, MD_PREFIX "%s", s_name);
@@ -131,52 +149,69 @@ void listen(Display *dpy, int xi_opcode) {
                         ai->next = ais.next;
                         ais.next = ai;
 
+                        /* The new pointer will have the suffic " pointer" */
                         asprintf(&ai->m_name, MD_PREFIX "%s pointer", s_name);
                         ai->slaveid = event->info[i].deviceid;
+                        XIFreeDeviceInfo(info);
                     }
                 }
             }
             
             if (event->flags & XIMasterAdded) {
-                PDEBUG("Master added\n");
+                PDEBUG("  Master added\n");
 
                 for (i=0; i < event->num_info; i++) {
                     if(event->info[i].flags & XIMasterAdded) {
                     
-                        m_name = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices)->name;
+                        info = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices);
+                        if (num_devices != 1) {
+                            PDEBUG("    Couldn't find master device (XIQueryDevice)\n");
+                            XIFreeDeviceInfo(info);
+                            continue;
+                        }
+                        m_name = info->name;
+
+                        PDEBUG("    Found: %s, reattaching\n", m_name);
 
                         ai = ais.next;
                         while (ai != NULL) {
                             if (strcmp(ai->m_name, m_name) == 0) {
-                                PDEBUG("  New Master: %d %s\n", event->info[i].deviceid,
-                                        m_name);
+                                PDEBUG("      New master found in internal list\n");
                                 change_attachment(dpy, ai->slaveid, event->info[i].deviceid);
                                 ai->masterid = event->info[i].deviceid;
                                 //XIDefineCursor(dpy, event->info[i].deviceid,
                                                //DefaultRootWindow(dpy), m_cur);
-                            }
+                            } 
                             ai = ai->next;
                         }
+                        XIFreeDeviceInfo(info);
                     }
                 }
             }
 
             if (event->flags & XISlaveRemoved) {
-                PDEBUG("Slave removed\n");
+                PDEBUG("  Slave removed\n");
                 for (i=0; i < event->num_info; i++) {
                     if(event->info[i].flags & XISlaveRemoved) {
-                        XIDeviceInfo *info;
                         int m_id;
+                        AttachInfo *ai_last;
 
+                        ai_last = &ais;
                         ai = ais.next;
                         while (ai != NULL) {
                             if (ai->slaveid == event->info[i].deviceid) {
-                                //info = XIQueryDevice(dpy, event->info[i].deviceid, &num_devices);
-                                //m_id = info->attachment;
+
+                                /* Remove corresponding master device */
                                 m_id = ai->masterid;
-                                PDEBUG("  Removing Master: %d\n", m_id);
+                                PDEBUG("    Removing Master: %d\n", m_id);
                                 remove_master(dpy, m_id);
+
+                                ai_last->next = ai->next;
+
+                                free(ai->m_name);
+                                free(ai);
                             }
+                            ai_last = ai;
                             ai = ai->next;
                         }
                     }
@@ -188,11 +223,37 @@ void listen(Display *dpy, int xi_opcode) {
 }
 
 /**
+ * Forks the process sets
+ */
+int daemonize() {
+    int pid;
+
+    pid = fork();
+    if (pid < 0) {
+        printf("Failed to fork\n");
+        return -1;
+    } else if (pid > 0) {
+        exit(0);
+    }
+
+    umask(0);
+
+    if ((chdir("/")) < 0) {
+        return -1;
+    }
+
+    freopen( "/dev/null", "r", stdin);
+    freopen( "/dev/null", "w", stdout);
+    freopen( "/dev/null", "w", stderr);
+}
+
+/**
  * Prints help information.
  */
 void printHelp(char* bin_name) {
     printf("Usage: %s [OPTION...]\n\n", bin_name);
     printf("  -d\tenables debugging output\n");
+    printf("  -f\truns process in foreground\n");
     printf("  -h\tprints this help message\n");
 }
 
@@ -206,6 +267,8 @@ void processArgs(int argc, char **argv) {
         if (strcmp(argv[i], "-d") == 0) {
             debug = 1;
             PDEBUG("Debug on\n");
+        } else if (strcmp(argv[i], "-f") == 0) {
+            foreground = 1;
         } else if (strcmp(argv[i], "-h") == 0) {
             printHelp(argv[0]);
             exit(0);
@@ -222,6 +285,8 @@ int main (int argc, char **argv) {
     ais.next = NULL;
 
     processArgs(argc, argv);
+    if (!foreground)
+        daemonize();
 
     PDEBUG("Connecting to X\n");
     /* Open X display */
