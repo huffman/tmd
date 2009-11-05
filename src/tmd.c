@@ -97,9 +97,6 @@ void listen(Display *dpy, int xi_opcode) {
         cookie = &ev.xcookie;
         XNextEvent(dpy, &ev);
 
-        if (!XGetEventData(dpy, cookie))
-            continue;
-
         PDEBUG("Event Received\n");
 
         if (cookie->type != GenericEvent ||
@@ -131,7 +128,7 @@ void listen(Display *dpy, int xi_opcode) {
                          * device we would end up with a recurring creation of
                          * master devices and slave devices. Also, tuio subdevices
                          * will have the word "subdev" in them. */
-                        if (strstr(s_name, "Xtst") ||
+                        if (strstr(s_name, "XTEST") ||
                                 !strstr(s_name, "subdev")) {
                             PDEBUG("      Device is NOT a tuio subdevice\n");
                             XIFreeDeviceInfo(info);
@@ -149,7 +146,7 @@ void listen(Display *dpy, int xi_opcode) {
                         ai->next = ais.next;
                         ais.next = ai;
 
-                        /* The new pointer will have the suffic " pointer" */
+                        /* The new pointer will have the suffix " pointer" */
                         asprintf(&ai->m_name, MD_PREFIX "%s pointer", s_name);
                         ai->slaveid = event->info[i].deviceid;
                         XIFreeDeviceInfo(info);
@@ -218,7 +215,7 @@ void listen(Display *dpy, int xi_opcode) {
                 }
             }
         }
-        XFreeEventData(dpy, cookie);
+        XFreeEventData(dpy, &ev);
     }
 }
 
