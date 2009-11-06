@@ -6,6 +6,7 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
+#define VERSION "0.1"
 #define MD_PREFIX "TUIO "
 #define PDEBUG(msg, ...) if(debug) printf("TMD: "msg,##__VA_ARGS__);
 
@@ -268,6 +269,9 @@ void processArgs(int argc, char **argv) {
             foreground = 1;
         } else if (strcmp(argv[i], "-h") == 0) {
             printHelp(argv[0]);
+            exit(0);
+        } else if (strcmp(argv[i], "-v") == 0) {
+            printf("Version "VERSION"\n");
             exit(0);
         }
     }
