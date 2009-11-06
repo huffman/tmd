@@ -98,6 +98,9 @@ void listen(Display *dpy, int xi_opcode) {
         cookie = &ev.xcookie;
         XNextEvent(dpy, &ev);
 
+        if (!XGetEventData(dpy, &ev))
+            continue;
+
         PDEBUG("Event Received\n");
 
         if (cookie->type != GenericEvent ||
