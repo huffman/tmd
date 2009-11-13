@@ -18,7 +18,9 @@ typedef struct _attach_info {
     char *m_name;
 } AttachInfo, *AttachInfoPtr;
 
+/* Attach Info "root" node */
 static AttachInfo ais;
+
 static int debug = 0;
 static int foreground = 1;
 
@@ -126,7 +128,7 @@ void listen(Display *dpy, int xi_opcode) {
 
                         PDEBUG("    Found: %s\n", s_name);
 
-                        /* This is a hack.  Xtst slave devices are created and
+                        /* This is a hack.  XTEST slave devices are created and
                          * attached to each new master device within X.  If we 
                          * were to actually create a new master device for this
                          * device we would end up with a recurring creation of
